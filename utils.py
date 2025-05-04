@@ -1,6 +1,38 @@
+import json
+import os
 import hashlib
 import time
 
+# JSON helpers
+def read_json(filename):
+    if not os.path.exists(filename):
+        return []
+    with open(filename, "r") as f:
+        return json.load(f)
+
+def write_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
+# Patient data logic
+def add_patient(patient_id, name, age, gender):
+    patients = read_json("patients.json")
+    for p in patients:
+        if p["id"] == patient_id:
+            return False
+    patients.append({
+        "id": patient_id,
+        "name": name,
+        "age": age,
+        "gender": gender
+    })
+    write_json("patients.json", patients)
+    return True
+
+def get_all_patients():
+    return read_json("patients.json")
+
+# Blockchain logic
 class Block:
     def __init__(self, index, data, previous_hash):
         self.index = index
@@ -12,17 +44,18 @@ class Block:
     def calculate_hash(self):
         return hashlib.sha256(f"{self.index}{self.timestamp}{self.data}{self.previous_hash}".encode()).hexdigest()
 
-class Blockchain:
-    def __init__(self):
-        self.chain = [self.create_genesis_block()]
+def get_chain():
+    return read_json("chain.json")
 
-    def create_genesis_block(self):
-        return Block(0, "Genesis Block", "0")
+def add_block(data):
+    chain = get_chain()
+    if len(chain) == 0:
+        previous_hash = "0"
+        index = 0
+    else:
+        previous_hash = chain[-1]["hash"]
+        index = len(chain)
 
-    def add_block(self, data):
-        last_block = self.chain[-1]
-        new_block = Block(len(self.chain), data, last_block.hash)
-        self.chain.append(new_block)
-        return new_block
-
-ehr_chain = Blockchain()
+    block = Block(index, data, previous_hash)
+    chain.append(block.__dict__)
+    write_json("chain.json", chain)
