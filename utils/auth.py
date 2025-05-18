@@ -1,57 +1,60 @@
-"""
-Authentication utilities for the EHR Chain application.
-"""
+import streamlit as st
+import time
+import os
+from datetime import datetime
 
-# Demo credentials (in a real app, these would be stored securely, e.g., in a database with hashing)
-DEMO_CREDENTIALS = {
-    'doctor': {
-        'username': 'doctor',
-        'password': 'doctor123',
-        'name': 'Dr. Sarah Johnson',
-        'specialization': 'Cardiologist',
-        'hospital': 'City General Hospital',
-        'license': 'MD12345'
-    },
-    'patient': {
-        'username': 'patient',
-        'password': 'patient123',
-        'name': 'John Smith',
-        'age': 42,
-        'blood_type': 'A+',
-        'address': '123 Health Street, Medical City',
-        'insurance': 'Health Assured Inc.'
-    }
-}
-
-def check_credentials(username, password, user_type):
+def login_user(user_id, user_type):
     """
-    Verify user credentials.
+    Log in a user by setting session state variables
     
     Args:
-        username (str): The username to check
-        password (str): The password to verify
-        user_type (str): Either 'doctor' or 'patient'
-        
-    Returns:
-        bool: True if credentials are valid, False otherwise
+        user_id: The unique ID of the user
+        user_type: The type of user ('patient' or 'doctor')
     """
-    # Check if the user exists and the password matches
-    if user_type in DEMO_CREDENTIALS:
-        user = DEMO_CREDENTIALS[user_type]
-        return username == user['username'] and password == user['password']
-    return False
+    st.session_state.authenticated = True
+    st.session_state.user_id = user_id
+    st.session_state.user_type = user_type
+    st.session_state.login_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Log the login event
+    log_file = os.path.join("data", "login_history.txt")
+    with open(log_file, "a") as f:
+        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},{user_id},{user_type},login\n")
 
-def get_user_data(username, user_type):
+def logout_user():
+    """Log out the current user by clearing session state variables"""
+    # Log the logout event if user was authenticated
+    if st.session_state.authenticated:
+        log_file = os.path.join("data", "login_history.txt")
+        with open(log_file, "a") as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},{st.session_state.user_id},{st.session_state.user_type},logout\n")
+    
+    # Clear session state
+    st.session_state.authenticated = False
+    st.session_state.user_id = None
+    st.session_state.user_type = None
+    if 'login_time' in st.session_state:
+        del st.session_state.login_time
+
+def is_authenticated():
+    """Check if the user is authenticated"""
+    return st.session_state.authenticated if 'authenticated' in st.session_state else False
+
+def check_password(entered_password, stored_hash):
     """
-    Get user data for the specified username and user type.
+    Check if the entered password matches the stored hash
+    
+    In a real application, this would use proper hashing like bcrypt.
+    For simplicity, we're using a basic comparison.
     
     Args:
-        username (str): The username to look up
-        user_type (str): Either 'doctor' or 'patient'
+        entered_password: The password entered by the user
+        stored_hash: The hashed password stored in the system
         
     Returns:
-        dict: User data if found, None otherwise
+        bool: True if password matches, False otherwise
     """
-    if user_type in DEMO_CREDENTIALS and username == DEMO_CREDENTIALS[user_type]['username']:
-        return DEMO_CREDENTIALS[user_type]
-    return None
+    import hashlib
+    # In a real app, use a proper password hashing library
+    hashed_password = hashlib.sha256(entered_password.encode()).hexdigest()
+    return hashed_password == stored_hash
