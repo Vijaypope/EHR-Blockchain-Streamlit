@@ -1,158 +1,296 @@
 import streamlit as st
-import pandas as pd
-from utils.auth import check_credentials
-from utils.blockchain import Block, Blockchain
+import pickle
+import sys
+import os
+import time
+from PIL import Image
+import base64
+import io
+
+# Add app directory to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import modules
+from utils.auth import check_password, login_user, logout_user, is_authenticated
+from utils.blockchain import Blockchain
+from utils.animations import loading_animation
+from utils.decorators import login_required, redirect_if_authenticated
 from pages.doctor import show_doctor_dashboard
 from pages.patient import show_patient_dashboard
-import time
+from classes.patient import Patient
+from classes.doctor import Doctor
 
-# Set page configuration
+# Set page config
 st.set_page_config(
-    page_title="EHR Chain - Blockchain Health Records",
-    page_icon="🔗",
+    page_title="EHR Blockchain System",
+    page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state variables if they don't exist
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
-if 'user_type' not in st.session_state:
-    st.session_state['user_type'] = None
-if 'user_data' not in st.session_state:
-    st.session_state['user_data'] = None
-if 'blockchain' not in st.session_state:
-    # Initialize blockchain with a genesis block
-    st.session_state['blockchain'] = Blockchain()
+# Initialize directory structure if it doesn't exist
+os.makedirs("data", exist_ok=True)
 
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #4F46E5;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #6B7280;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .login-container {
-        max-width: 500px;
-        margin: 0 auto;
-        padding: 2rem;
-        background-color: #F3F4F6;
-        border-radius: 0.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    .stButton > button {
-        width: 100%;
-        background-color: #4F46E5;
-        color: white;
-        border: none;
-        padding: 0.75rem 1.5rem;
-        font-size: 1rem;
-        border-radius: 0.375rem;
-    }
-    .stButton > button:hover {
-        background-color: #4338CA;
-    }
-    .login-options {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-    }
-    .toggle {
-        cursor: pointer;
-    }
-    .footer {
-        margin-top: 2rem;
-        text-align: center;
-        color: #6B7280;
-        font-size: 0.875rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+def initialize_session_state():
+    """Initialize session state variables if they don't exist."""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = None
+    if 'user_type' not in st.session_state:
+        st.session_state.user_type = None
+    if 'blockchain' not in st.session_state:
+        try:
+            with open("data/blockchain.pkl", "rb") as f:
+                st.session_state.blockchain = pickle.load(f)
+        except (FileNotFoundError, EOFError):
+            st.session_state.blockchain = Blockchain()
+            with open("data/blockchain.pkl", "wb") as f:
+                pickle.dump(st.session_state.blockchain, f)
 
-def login_page():
-    # Header
-    st.markdown('<h1 class="main-header">EHR Chain</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Secure blockchain-based health records</p>', unsafe_allow_html=True)
+def show_login_form():
+    """Display the login form."""
+    st.subheader("Login")
     
-    # Login container
-    with st.container():
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
-        # Doctor/Patient selector
-        login_as = st.radio(
-            "Login as:",
-            ("Doctor", "Patient"),
-            horizontal=True
-        )
-        
-        # Username and password fields
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        
-        # Login button
-        if st.button("Login"):
-            with st.spinner("Logging in..."):
-                time.sleep(1)  # Simulate login process
-                if check_credentials(username, password, login_as.lower()):
-                    st.session_state['authenticated'] = True
-                    st.session_state['user_type'] = login_as.lower()
-                    st.session_state['user_data'] = {
-                        'username': username,
-                        'role': login_as
-                    }
-                    st.success(f"Login successful as {login_as}!")
+    # Select user type
+    user_type = st.selectbox("Login as", ["Patient", "Doctor"])
+    
+    # Email and password inputs
+    email = st.text_input("Email Address", key="login_email")
+    password = st.text_input("Password", type="password", key="login_password")
+    
+    if st.button("Login"):
+        if not email or not password:
+            st.error("Please enter both email and password")
+            return
+            
+        # Show loading animation
+        with st.spinner("Logging in..."):
+            time.sleep(1)  # Simulate network delay
+            
+            # Handle different user types
+            if user_type.lower() == "patient":
+                patient = Patient.get_patient_by_email(email)
+                if patient and patient.verify_password(password):
+                    # Login successful
+                    login_user(patient.patient_id, "patient")
+                    st.success("Login successful!")
                     st.experimental_rerun()
                 else:
-                    st.error("Invalid username or password. Please try again.")
-        
-        # Demo credentials
-        with st.expander("Demo Credentials"):
-            st.markdown("""
-            **Doctor:**
-            - Username: `doctor`
-            - Password: `doctor123`
-            
-            **Patient:**
-            - Username: `patient`
-            - Password: `patient123`
-            """)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+                    st.error("Invalid email or password")
+            else:  # Doctor login
+                doctor = Doctor.get_doctor_by_email(email)
+                if doctor and doctor.verify_password(password):
+                    # Login successful
+                    login_user(doctor.doctor_id, "doctor")
+                    st.success("Login successful!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Invalid email or password")
+
+def show_register_form():
+    """Display registration form."""
+    st.subheader("Register")
     
-    # Footer
-    st.markdown('<div class="footer">University Project by Riyaz and Vijay</div>', unsafe_allow_html=True)
-
-def logout():
-    st.session_state['authenticated'] = False
-    st.session_state['user_type'] = None
-    st.session_state['user_data'] = None
-    st.success("Logged out successfully!")
-    st.experimental_rerun()
-
-# Main app logic
-def main():
-    if not st.session_state['authenticated']:
-        login_page()
-    else:
-        # Sidebar with logout button
-        with st.sidebar:
-            st.write(f"Logged in as: **{st.session_state['user_data']['username']}** ({st.session_state['user_data']['role']})")
-            if st.button("Logout"):
-                logout()
+    # Select user type
+    user_type = st.selectbox("Register as", ["Patient", "Doctor"])
+    
+    # Common fields
+    name = st.text_input("Full Name", key="reg_name")
+    email = st.text_input("Email Address", key="reg_email")
+    password = st.text_input("Password", type="password", key="reg_password")
+    confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
+    
+    # Type-specific fields
+    if user_type == "Patient":
+        date_of_birth = st.date_input("Date of Birth")
+        gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+        blood_group = st.selectbox("Blood Group", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
+        contact = st.text_input("Contact Number")
+        address = st.text_area("Address")
         
-        # Display appropriate dashboard based on user type
-        if st.session_state['user_type'] == 'doctor':
-            show_doctor_dashboard()
-        elif st.session_state['user_type'] == 'patient':
-            show_patient_dashboard()
+        if st.button("Register"):
+            if password != confirm_password:
+                st.error("Passwords don't match!")
+                return
+                
+            # Show registration process
+            with st.spinner("Creating your account..."):
+                time.sleep(1)  # Simulate network delay
+                
+                # Check if email already exists
+                existing_patient = Patient.get_patient_by_email(email)
+                if existing_patient:
+                    st.error("Email already registered!")
+                    return
+                
+                # Create new patient
+                try:
+                    patient = Patient(
+                        name=name,
+                        email=email,
+                        date_of_birth=str(date_of_birth),
+                        gender=gender,
+                        blood_group=blood_group,
+                        contact=contact,
+                        address=address
+                    )
+                    patient.set_password(password)
+                    patient.save()
+                    
+                    # Add genesis block to patient's medical records if it's the first patient
+                    if not os.path.exists("data/blockchain.pkl"):
+                        blockchain = Blockchain()
+                        blockchain.add_genesis_block()
+                        with open("data/blockchain.pkl", "wb") as f:
+                            pickle.dump(blockchain, f)
+                    
+                    st.success("Registration successful! Please login.")
+                except Exception as e:
+                    st.error(f"Registration failed: {str(e)}")
+    
+    else:  # Doctor registration
+        specialization = st.text_input("Specialization")
+        hospital = st.text_input("Hospital/Clinic")
+        license_number = st.text_input("Medical License Number")
+        contact = st.text_input("Contact Number")
+        
+        if st.button("Register"):
+            if password != confirm_password:
+                st.error("Passwords don't match!")
+                return
+                
+            # Show registration process
+            with st.spinner("Creating your account..."):
+                time.sleep(1)  # Simulate network delay
+                
+                # Check if email already exists
+                existing_doctor = Doctor.get_doctor_by_email(email)
+                if existing_doctor:
+                    st.error("Email already registered!")
+                    return
+                
+                # Create new doctor
+                try:
+                    doctor = Doctor(
+                        name=name,
+                        email=email,
+                        specialization=specialization,
+                        hospital=hospital,
+                        license_number=license_number,
+                        contact=contact
+                    )
+                    doctor.set_password(password)
+                    doctor.save()
+                    
+                    st.success("Registration successful! Please login.")
+                except Exception as e:
+                    st.error(f"Registration failed: {str(e)}")
+
+def welcome_page():
+    """Display the welcome page with login and registration options."""
+    
+    # Create columns for layout
+    col1, col2 = st.columns([2, 3])
+    
+    with col1:
+        st.title("EHR Blockchain")
+        st.subheader("Secure Electronic Health Records")
+        
+        # Add some explanation about the system
+        st.write("""
+        Welcome to the EHR Blockchain system, a secure and transparent 
+        platform for managing electronic health records using blockchain technology.
+        
+        **Key Features:**
+        - Immutable medical records
+        - Secure patient-doctor data sharing
+        - Transparent audit trail
+        - Patient-controlled access
+        """)
+        
+        # Display login/register tabs
+        login_tab, register_tab = st.tabs(["Login", "Register"])
+        
+        with login_tab:
+            show_login_form()
+            
+        with register_tab:
+            show_register_form()
+    
+    with col2:
+        # Display some blockchain visual
+        st.image("https://miro.medium.com/max/1400/1*BYVJQCqx7DisAI8HYv8bJw.png", 
+                 use_column_width=True,
+                 caption="Blockchain-based EHR System")
+        
+        # Display some stats or info
+        st.subheader("System Statistics")
+        
+        # Try to load blockchain
+        try:
+            with open("data/blockchain.pkl", "rb") as f:
+                blockchain = pickle.load(f)
+            blockchain_exists = True
+        except (FileNotFoundError, EOFError):
+            blockchain_exists = False
+            blockchain = Blockchain()
+        
+        # Try to load patients data
+        try:
+            patients = Patient.load_patients()
+            patients_count = len(patients)
+        except:
+            patients_count = 0
+            
+        # Try to load doctors data
+        try:
+            doctors = Doctor.load_doctors()
+            doctors_count = len(doctors)
+        except:
+            doctors_count = 0
+        
+        # Display stats in columns
+        stat_col1, stat_col2, stat_col3 = st.columns(3)
+        
+        with stat_col1:
+            if blockchain_exists:
+                st.metric("Blockchain Blocks", len(blockchain.chain))
+            else:
+                st.metric("Blockchain Blocks", 1)  # Genesis block
+                
+        with stat_col2:
+            st.metric("Registered Patients", patients_count)
+            
+        with stat_col3:
+            st.metric("Registered Doctors", doctors_count)
+            
+        # Display blockchain info
+        with st.expander("About Blockchain Technology"):
+            st.write("""
+            **Blockchain** ensures your medical records remain:
+            
+            * **Immutable** - Once data is recorded, it cannot be altered
+            * **Transparent** - All changes are visible in the chain
+            * **Secure** - Encrypted and distributed across multiple nodes
+            * **Private** - Access controlled by patients
+            """)
+
+def main():
+    """Main function to run the Streamlit app."""
+    # Initialize session state
+    initialize_session_state()
+    
+    # Check authentication status
+    if is_authenticated():
+        # Show appropriate dashboard based on user type
+        if st.session_state.user_type == "patient":
+            show_patient_dashboard(st.session_state.user_id)
+        else:  # doctor
+            show_doctor_dashboard(st.session_state.user_id)
+    else:
+        # Show welcome page with login/register options
+        welcome_page()
 
 if __name__ == "__main__":
     main()
