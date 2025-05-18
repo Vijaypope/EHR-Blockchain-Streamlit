@@ -75,7 +75,7 @@ def show_login_form():
                     # Login successful
                     login_user(patient.patient_id, "patient")
                     st.success("Login successful!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Invalid email or password")
             else:  # Doctor login
@@ -84,7 +84,7 @@ def show_login_form():
                     # Login successful
                     login_user(doctor.doctor_id, "doctor")
                     st.success("Login successful!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Invalid email or password")
 
