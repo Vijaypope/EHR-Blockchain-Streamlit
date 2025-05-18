@@ -32,21 +32,67 @@ st.set_page_config(
 os.makedirs("data", exist_ok=True)
 
 def initialize_session_state():
-    """Initialize session state variables if they don't exist."""
+def initialize_session_state():
+    """Initialize session state variables for the application."""
+    # Initialize user authentication state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
-    if 'user_id' not in st.session_state:
-        st.session_state.user_id = None
-    if 'user_type' not in st.session_state:
-        st.session_state.user_type = None
+    
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
+    
+    if 'current_role' not in st.session_state:
+        st.session_state.current_role = None
+    
+    # Initialize blockchain
     if 'blockchain' not in st.session_state:
+        # First try to load the blockchain from pickle file
         try:
-            with open("data/blockchain.pkl", "rb") as f:
-                st.session_state.blockchain = pickle.load(f)
-        except (FileNotFoundError, EOFError):
+            import os
+            
+            # Make sure the data directory exists
+            os.makedirs("data", exist_ok=True)
+            
+            # Check if file exists and has content
+            if os.path.exists("data/blockchain.pkl") and os.path.getsize("data/blockchain.pkl") > 0:
+                with open("data/blockchain.pkl", "rb") as f:
+                    try:
+                        st.session_state.blockchain = pickle.load(f)
+                    except Exception as e:
+                        st.warning(f"Error loading blockchain data: {e}. Creating a new blockchain.")
+                        st.session_state.blockchain = Blockchain()
+                        # Backup the corrupted file
+                        if os.path.exists("data/blockchain.pkl"):
+                            os.rename("data/blockchain.pkl", "data/blockchain.pkl.bak")
+                        # Create a new pickle file
+                        with open("data/blockchain.pkl", "wb") as f:
+                            pickle.dump(st.session_state.blockchain, f)
+            else:
+                # Create a new blockchain if file doesn't exist or is empty
+                st.session_state.blockchain = Blockchain()
+                with open("data/blockchain.pkl", "wb") as f:
+                    pickle.dump(st.session_state.blockchain, f)
+        except Exception as e:
+            st.error(f"Critical error initializing blockchain: {e}")
             st.session_state.blockchain = Blockchain()
-            with open("data/blockchain.pkl", "wb") as f:
-                pickle.dump(st.session_state.blockchain, f)
+    
+    # Initialize other session state variables as needed
+    if 'page' not in st.session_state:
+        st.session_state.page = 'welcome'
+    
+    if 'users' not in st.session_state:
+        try:
+            with open("data/users.pkl", "rb") as f:
+                st.session_state.users = pickle.load(f)
+        except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+            # Default users with roles (doctor, patient, admin)
+            st.session_state.users = {
+                "doctor1": {"password": "doc123", "role": "doctor", "name": "Dr. Smith"},
+                "patient1": {"password": "pat123", "role": "patient", "name": "John Doe"},
+                "admin": {"password": "admin123", "role": "admin", "name": "Admin User"}
+            }
+            with open("data/users.pkl", "wb") as f:
+                pickle.dump(st.session_state.users, f)
 
 def show_login_form():
     """Display the login form."""
