@@ -32,7 +32,6 @@ st.set_page_config(
 os.makedirs("data", exist_ok=True)
 
 def initialize_session_state():
-def initialize_session_state():
     """Initialize session state variables for the application."""
     # Initialize user authentication state
     if 'authenticated' not in st.session_state:
