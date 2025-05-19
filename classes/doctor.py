@@ -24,29 +24,76 @@ class Doctor:
     
     doctors_file = os.path.join("data", "doctors.pkl")
     
-    def __init__(self, name, email, specialization, hospital, license_number, contact):
-        """
-        Initialize a new doctor
-        
-        Args:
-            name (str): Full name of the doctor
-            email (str): Email address of the doctor
-            specialization (str): Medical specialization
-            hospital (str): Hospital or clinic affiliation
-            license_number (str): Medical license number
-            contact (str): Contact information
-        """
-        self.doctor_id = str(uuid.uuid4())
+    def __init__(self, name, email, specialization, hospital, license_number, contact, doctor_id=None):
+        self.doctor_id = doctor_id if doctor_id else str(uuid.uuid4())
         self.name = name
         self.email = email
-        self.password_hash = None  # Will be set using set_password method
         self.specialization = specialization
         self.hospital = hospital
         self.license_number = license_number
         self.contact = contact
-        self.patients = []  # List of patient IDs under care
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.last_login = None
+        self.password_hash = None
+        self.patients = []  # List of patient IDs this doctor has access to
+        self.created_at = datetime.now().isoformat()
+
+    def set_password(self, password):
+        """Set the password hash for the doctor."""
+        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    def verify_password(self, password):
+        """Verify the password against the stored hash."""
+        return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
+
+    def save(self):
+        """Save the doctor to the pickle file."""
+        # Get all existing doctors first
+        doctors = self.load_doctors()
+        
+        # Add or update this doctor
+        doctors[self.doctor_id] = self
+        
+        # Ensure the data directory exists
+        os.makedirs("data", exist_ok=True)
+        
+        # Save all doctors back to the pickle file
+        with open("data/doctors.pkl", "wb") as f:
+            pickle.dump(doctors, f)
+
+    @classmethod
+    def load_doctors(cls):
+        """Load all doctors from the pickle file."""
+        try:
+            if os.path.exists("data/doctors.pkl") and os.path.getsize("data/doctors.pkl") > 0:
+                with open("data/doctors.pkl", "rb") as f:
+                    return pickle.load(f)
+            else:
+                return {}  # Return empty dict if file doesn't exist or is empty
+        except (EOFError, pickle.UnpicklingError) as e:
+            # If there's a problem with the pickle file, create a backup and return empty dict
+            if os.path.exists("data/doctors.pkl"):
+                backup_path = f"data/doctors.pkl.bak_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                os.rename("data/doctors.pkl", backup_path)
+                print(f"Corrupted doctors.pkl backed up to {backup_path}")
+            return {}
+
+    @classmethod
+    def get_doctor_by_id(cls, doctor_id):
+        """Get a doctor by ID."""
+        doctors = cls.load_doctors()
+        return doctors.get(doctor_id)
+
+    @classmethod
+    def get_doctor_by_email(cls, email):
+        """Get a doctor by email."""
+        try:
+            doctors = cls.load_doctors()
+            for doctor in doctors.values():
+                if doctor.email == email:
+                    return doctor
+            return None
+        except Exception as e:
+            print(f"Error in get_doctor_by_email: {e}")
+            return None
     
     def set_password(self, password):
         """
